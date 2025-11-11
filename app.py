@@ -699,5 +699,5 @@ with prompt_container:
 if user_cmd and user_cmd != st.session_state.last_processed_cmd:
     st.session_state.last_processed_cmd = user_cmd   # mark as processed
     _process_and_apply(user_cmd, source_hint="text")
-    st.session_state.prompt_text = ""                # clear input box
+ #   st.session_state.prompt_text = ""                # clear input box
     st.rerun()                                       # rerun AFTER applying text command
