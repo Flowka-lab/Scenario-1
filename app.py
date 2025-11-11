@@ -8,7 +8,6 @@ from dateutil import parser as dtp
 import streamlit as st
 import pandas as pd
 import altair as alt
-from streamlit_mic_recorder import mic_recorder
 from nlp_extractor import ai_extract_intent
 
 
@@ -36,11 +35,6 @@ header[data-testid="stHeader"] {
 
 try:
     os.environ["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
-except Exception:
-    pass
-
-try:
-    os.environ["DEEPGRAM_API_KEY"] = os.environ.get("DEEPGRAM_API_KEY") or st.secrets["DEEPGRAM_API_KEY"]
 except Exception:
     pass
 
@@ -143,10 +137,6 @@ if "cmd_log" not in st.session_state:
     st.session_state.cmd_log = []
 if "color_mode" not in st.session_state:
     st.session_state.color_mode = "Product"
-if "last_audio_fp" not in st.session_state:
-    st.session_state.last_audio_fp = None
-if "last_transcript" not in st.session_state:
-    st.session_state.last_transcript = None
 if "prompt_text" not in st.session_state:
     st.session_state.prompt_text = ""
 if "last_processed_cmd" not in st.session_state:
@@ -190,7 +180,7 @@ if st.session_state.filters_visible:
         st.session_state.filt_products = st.multiselect(
             "Products",
             products_all,
-            default=st.session_state.filt_products,
+            default=[],
             key="product_ms",
         )
         
@@ -198,7 +188,7 @@ if st.session_state.filters_visible:
         st.session_state.filt_machines = st.multiselect(
             "Machines",
             machines_all,
-            default=st.session_state.filt_machines,
+            default=[],
             key="machine_ms",
         )
 
@@ -218,18 +208,8 @@ if st.session_state.filters_visible:
             st.session_state.filt_machines = []
             st.session_state.color_mode = "Product"
             st.session_state.cmd_log = []
-            st.session_state.last_transcript = None
-            st.session_state.last_audio_fp = None
             st.session_state.schedule_df = base_schedule.copy()
             st.rerun()
-        
-        # === Voice-only debug ===
-        with st.expander("🎙 Voice Debug", expanded=False):
-            if st.session_state.last_transcript:
-                st.caption("**Last transcript from Deepgram:**")
-                st.code(st.session_state.last_transcript)
-            else:
-                st.caption("No transcript yet.")
 
         # === Command / OpenAI debug ===
         with st.expander("🤖 Command / OpenAI Debug", expanded=False):
@@ -653,27 +633,6 @@ else:
     st.altair_chart(gantt, use_container_width=True)
 
 
-# ============================ DEEPGRAM TRANSCRIPTION =========================
-
-def _deepgram_transcribe_bytes(wav_bytes: bytes, mimetype: str = "audio/wav") -> str:
-    key = os.getenv("DEEPGRAM_API_KEY")
-    if not key:
-        raise RuntimeError("DEEPGRAM_API_KEY not set")
-    import requests
-    url = "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&language=en"
-    headers = {"Authorization": f"Token {key}", "Content-Type": mimetype}
-    r = requests.post(url, headers=headers, data=wav_bytes, timeout=45)
-    try:
-        r.raise_for_status()
-    except Exception as e:
-        raise RuntimeError(f"Deepgram error: {r.text}") from e
-    j = r.json()
-    try:
-        return j["results"]["channels"][0]["alternatives"][0]["transcript"].strip()
-    except Exception:
-        raise RuntimeError(f"Deepgram: no transcript in response: {j}")
-
-
 # ============================ PROCESS COMMAND =========================
 
 def _process_and_apply(cmd_text: str, *, source_hint: str = None):
@@ -723,54 +682,18 @@ def _process_and_apply(cmd_text: str, *, source_hint: str = None):
         st.error(f"⚠️ Error: {e}")
 
 
-# ============================ VOICE + TEXT PROMPT BAR =========================
+# ============================ TEXT PROMPT BAR =========================
 
 st.markdown("---")
 prompt_container = st.container()
 
 with prompt_container:
-    c1, c2 = st.columns([0.82, 0.18])
-
-    with c1:
-        st.markdown("**🧠 Command**")
-        user_cmd = st.text_input(
-            "Type: delay / advance / swap orders…",
-            key="prompt_text",
-            label_visibility="collapsed",
-        )
-
-    with c2:
-        st.markdown(
-            "<div style='text-align:right; font-size:0.8rem; "
-            "margin-bottom:0.25rem;'>🎤 Voice</div>",
-            unsafe_allow_html=True,
-        )
-        rec = mic_recorder(
-            start_prompt="●",
-            stop_prompt="■",
-            key="voice_mic",
-            just_once=False,
-            format="wav",
-            use_container_width=False,
-        )
-
-# Voice: one shot per unique audio fingerprint
-if rec and isinstance(rec, dict) and rec.get("bytes"):
-    wav_bytes = rec["bytes"]
-    fp = (len(wav_bytes), hash(wav_bytes[:1024]))
-    if fp != st.session_state.last_audio_fp:
-        st.session_state.last_audio_fp = fp
-        try:
-            with st.spinner("Transcribing…"):
-                transcript = _deepgram_transcribe_bytes(wav_bytes, mimetype="audio/wav")
-            st.session_state.last_transcript = transcript
-            if transcript:
-                _process_and_apply(transcript, source_hint="voice/deepgram")
-                st.rerun()  # rerun AFTER applying voice command
-            else:
-                st.warning("No speech detected.")
-        except Exception as e:
-            st.error(f"Transcription failed: {e}")
+    user_cmd = st.text_input(
+        "Command / prompt",
+        key="prompt_text",
+        placeholder="Delay / Advance / Swap orders...",
+        label_visibility="visible",
+    )
 
 # Text: process once per new command string
 if user_cmd and user_cmd != st.session_state.last_processed_cmd:
