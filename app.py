@@ -62,7 +62,9 @@ def load_and_generate_data():
     }
     
     schedule_rows = []
-    base_start = datetime(2025, 11, 3, 6, 0)
+    ### to change the start date whenever is suitable ...
+    ### base_start = datetime(2025, 11, 3, 6, 0)
+    base_start = datetime.now()
     machine_timeline = {v: base_start for v in line_map.values()}
 
     orders_sorted = orders_df.sort_values(['due_date', 'order_id']).reset_index(drop=True)
